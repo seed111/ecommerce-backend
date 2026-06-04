@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: app/requirements.txt
+      - run: pip install -r app/requirements.txt pytest pytest-asyncio httpx ruff moto
+      - run: ruff check app/
+      - run: pytest app/tests/ -v
+        env:
+          ENV: test
+          AWS_DEFAULT_REGION: eu-west-1
+          PRODUCTS_TABLE_NAME: test-products
+          ORDERS_TABLE_NAME: test-orders
+          USERS_TABLE_NAME: test-users
+          S3_BUCKET_NAME: test-bucket
+
+  terraform-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
+      - name: Terraform Init
+        working-directory: terraform/environments/dev
+        run: terraform init -backend=false
+      - name: Terraform Validate
+        working-directory: terraform/environments/dev
+        run: terraform validate
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive terraform/
