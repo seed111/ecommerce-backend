@@ -72,4 +72,4 @@ jobs:
             --set image.tag=${{ needs.build.outputs.image_tag }} \
             --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=arn:aws:iam::594574399203:role/dev-ecommerce-eks-app-irsa \
             --set env.S3_BUCKET_NAME=dev-ecommerce-product-images-594574399203 \
-            --atomic --timeout 10m --wait
+            --atomic --timeout 15m --wait
