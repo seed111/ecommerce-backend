@@ -1,2 +1,7 @@
-output "bucket_name" { value = aws_s3_bucket.product_images.bucket }
-output "bucket_arn" { value = aws_s3_bucket.product_images.arn }
+output "repository_url" {
+  value = aws_ecr_repository.app.repository_url
+}
+
+output "repository_arn" {
+  value = aws_ecr_repository.app.arn
+}

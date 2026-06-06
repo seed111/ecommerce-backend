@@ -29,8 +29,10 @@ resource "aws_iam_role_policy" "lambda" {
         Sid    = "DynamoDBStreams"
         Effect = "Allow"
         Action = [
-          "dynamodb:GetRecords", "dynamodb:GetShardIterator",
-          "dynamodb:DescribeStream", "dynamodb:ListStreams",
+          "dynamodb:GetRecords",
+          "dynamodb:GetShardIterator",
+          "dynamodb:DescribeStream",
+          "dynamodb:ListStreams",
         ]
         Resource = [var.orders_stream_arn]
       },
@@ -41,9 +43,9 @@ resource "aws_iam_role_policy" "lambda" {
         Resource = [var.orders_table_arn, var.products_table_arn]
       },
       {
-        Sid      = "CloudWatch"
-        Effect   = "Allow"
-        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+        Sid    = "CloudWatch"
+        Effect = "Allow"
+        Action = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
         Resource = "arn:aws:logs:*:*:*"
       }
     ]
@@ -52,7 +54,7 @@ resource "aws_iam_role_policy" "lambda" {
 
 data "archive_file" "order_processor" {
   type        = "zip"
-  source_dir  = "${path.root}/../../lambda/order_processor"
+  source_dir  = "${path.root}/../../../lambda/order_processor"
   output_path = "${path.module}/order_processor.zip"
 }
 

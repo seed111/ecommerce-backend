@@ -3,8 +3,15 @@ resource "aws_dynamodb_table" "products" {
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "product_id"
 
-  attribute { name = "product_id"; type = "S" }
-  attribute { name = "category"; type = "S" }
+  attribute {
+    name = "product_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "category"
+    type = "S"
+  }
 
   global_secondary_index {
     name            = "category-index"
@@ -12,8 +19,14 @@ resource "aws_dynamodb_table" "products" {
     projection_type = "ALL"
   }
 
-  point_in_time_recovery { enabled = var.enable_pitr }
-  server_side_encryption { enabled = true }
+  point_in_time_recovery {
+    enabled = var.enable_pitr
+  }
+
+  server_side_encryption {
+    enabled = true
+  }
+
   tags = merge(var.tags, { Name = "${var.env}-products" })
 }
 
@@ -23,9 +36,20 @@ resource "aws_dynamodb_table" "orders" {
   hash_key     = "order_id"
   range_key    = "user_id"
 
-  attribute { name = "order_id"; type = "S" }
-  attribute { name = "user_id"; type = "S" }
-  attribute { name = "status"; type = "S" }
+  attribute {
+    name = "order_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "user_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "status"
+    type = "S"
+  }
 
   global_secondary_index {
     name            = "user-orders-index"
@@ -42,8 +66,14 @@ resource "aws_dynamodb_table" "orders" {
   stream_enabled   = true
   stream_view_type = "NEW_AND_OLD_IMAGES"
 
-  point_in_time_recovery { enabled = var.enable_pitr }
-  server_side_encryption { enabled = true }
+  point_in_time_recovery {
+    enabled = var.enable_pitr
+  }
+
+  server_side_encryption {
+    enabled = true
+  }
+
   tags = merge(var.tags, { Name = "${var.env}-orders" })
 }
 
@@ -52,8 +82,15 @@ resource "aws_dynamodb_table" "users" {
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "user_id"
 
-  attribute { name = "user_id"; type = "S" }
-  attribute { name = "email"; type = "S" }
+  attribute {
+    name = "user_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "email"
+    type = "S"
+  }
 
   global_secondary_index {
     name            = "email-index"
@@ -61,7 +98,13 @@ resource "aws_dynamodb_table" "users" {
     projection_type = "ALL"
   }
 
-  point_in_time_recovery { enabled = var.enable_pitr }
-  server_side_encryption { enabled = true }
+  point_in_time_recovery {
+    enabled = var.enable_pitr
+  }
+
+  server_side_encryption {
+    enabled = true
+  }
+
   tags = merge(var.tags, { Name = "${var.env}-users" })
 }

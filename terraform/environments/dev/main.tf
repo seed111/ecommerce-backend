@@ -78,7 +78,7 @@ module "eks" {
   cluster_version     = var.eks_cluster_version
   private_subnet_ids  = module.networking.private_subnet_ids
   node_instance_types = var.node_instance_types
-  node_capacity_type  = "SPOT"
+  node_capacity_type  = "ON_DEMAND"
   node_desired        = 2
   node_min            = 1
   node_max            = 3
