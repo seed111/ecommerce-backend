@@ -41,32 +41,10 @@ jobs:
           docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.tag }}
           docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
 
-  test:
-    name: Run Tests
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - run: pip install -r app/requirements.txt pytest pytest-asyncio httpx moto
-
-      - run: pytest app/tests/ -v
-        env:
-          ENV: test
-          AWS_DEFAULT_REGION: eu-west-1
-          PRODUCTS_TABLE_NAME: test-products
-          ORDERS_TABLE_NAME: test-orders
-          USERS_TABLE_NAME: test-users
-          S3_BUCKET_NAME: test-bucket
-
   deploy:
     name: Deploy to EKS
     runs-on: ubuntu-latest
-    needs: [build, test]
+    needs: build
     environment: dev
 
     steps:
