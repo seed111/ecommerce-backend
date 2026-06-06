@@ -17,83 +17,76 @@ os.environ.update({
 
 
 @pytest.fixture(scope="function")
-@mock_aws
 def aws_resources():
-    dynamodb = boto3.resource("dynamodb", region_name="eu-west-1")
-
-    dynamodb.create_table(
-        TableName="test-products",
-        BillingMode="PAY_PER_REQUEST",
-        KeySchema=[{"AttributeName": "product_id", "KeyType": "HASH"}],
-        AttributeDefinitions=[
-            {"AttributeName": "product_id", "AttributeType": "S"},
-            {"AttributeName": "category", "AttributeType": "S"},
-        ],
-        GlobalSecondaryIndexes=[{
-            "IndexName": "category-index",
-            "KeySchema": [{"AttributeName": "category", "KeyType": "HASH"}],
-            "Projection": {"ProjectionType": "ALL"},
-        }],
-    )
-
-    dynamodb.create_table(
-        TableName="test-orders",
-        BillingMode="PAY_PER_REQUEST",
-        KeySchema=[
-            {"AttributeName": "order_id", "KeyType": "HASH"},
-            {"AttributeName": "user_id", "KeyType": "RANGE"},
-        ],
-        AttributeDefinitions=[
-            {"AttributeName": "order_id", "AttributeType": "S"},
-            {"AttributeName": "user_id", "AttributeType": "S"},
-            {"AttributeName": "status", "AttributeType": "S"},
-        ],
-        GlobalSecondaryIndexes=[
-            {
-                "IndexName": "user-orders-index",
-                "KeySchema": [{"AttributeName": "user_id", "KeyType": "HASH"}],
+    with mock_aws():
+        dynamodb = boto3.resource("dynamodb", region_name="eu-west-1")
+        dynamodb.create_table(
+            TableName="test-products",
+            BillingMode="PAY_PER_REQUEST",
+            KeySchema=[{"AttributeName": "product_id", "KeyType": "HASH"}],
+            AttributeDefinitions=[
+                {"AttributeName": "product_id", "AttributeType": "S"},
+                {"AttributeName": "category", "AttributeType": "S"},
+            ],
+            GlobalSecondaryIndexes=[{
+                "IndexName": "category-index",
+                "KeySchema": [{"AttributeName": "category", "KeyType": "HASH"}],
                 "Projection": {"ProjectionType": "ALL"},
-            },
-            {
-                "IndexName": "status-index",
-                "KeySchema": [{"AttributeName": "status", "KeyType": "HASH"}],
+            }],
+        )
+        dynamodb.create_table(
+            TableName="test-orders",
+            BillingMode="PAY_PER_REQUEST",
+            KeySchema=[
+                {"AttributeName": "order_id", "KeyType": "HASH"},
+                {"AttributeName": "user_id", "KeyType": "RANGE"},
+            ],
+            AttributeDefinitions=[
+                {"AttributeName": "order_id", "AttributeType": "S"},
+                {"AttributeName": "user_id", "AttributeType": "S"},
+                {"AttributeName": "status", "AttributeType": "S"},
+            ],
+            GlobalSecondaryIndexes=[
+                {
+                    "IndexName": "user-orders-index",
+                    "KeySchema": [{"AttributeName": "user_id", "KeyType": "HASH"}],
+                    "Projection": {"ProjectionType": "ALL"},
+                },
+                {
+                    "IndexName": "status-index",
+                    "KeySchema": [{"AttributeName": "status", "KeyType": "HASH"}],
+                    "Projection": {"ProjectionType": "ALL"},
+                },
+            ],
+        )
+        dynamodb.create_table(
+            TableName="test-users",
+            BillingMode="PAY_PER_REQUEST",
+            KeySchema=[{"AttributeName": "user_id", "KeyType": "HASH"}],
+            AttributeDefinitions=[
+                {"AttributeName": "user_id", "AttributeType": "S"},
+                {"AttributeName": "email", "AttributeType": "S"},
+            ],
+            GlobalSecondaryIndexes=[{
+                "IndexName": "email-index",
+                "KeySchema": [{"AttributeName": "email", "KeyType": "HASH"}],
                 "Projection": {"ProjectionType": "ALL"},
-            },
-        ],
-    )
-
-    dynamodb.create_table(
-        TableName="test-users",
-        BillingMode="PAY_PER_REQUEST",
-        KeySchema=[{"AttributeName": "user_id", "KeyType": "HASH"}],
-        AttributeDefinitions=[
-            {"AttributeName": "user_id", "AttributeType": "S"},
-            {"AttributeName": "email", "AttributeType": "S"},
-        ],
-        GlobalSecondaryIndexes=[{
-            "IndexName": "email-index",
-            "KeySchema": [{"AttributeName": "email", "KeyType": "HASH"}],
-            "Projection": {"ProjectionType": "ALL"},
-        }],
-    )
-
-    s3 = boto3.client("s3", region_name="eu-west-1")
-    s3.create_bucket(
-        Bucket="test-bucket",
-        CreateBucketConfiguration={"LocationConstraint": "eu-west-1"},
-    )
-
-    yield
+            }],
+        )
+        s3 = boto3.client("s3", region_name="eu-west-1")
+        s3.create_bucket(
+            Bucket="test-bucket",
+            CreateBucketConfiguration={"LocationConstraint": "eu-west-1"},
+        )
+        yield
 
 
 @pytest.fixture
-@mock_aws
 def client(aws_resources):
     from main import app
     return TestClient(app)
 
 
-@mock_aws
 def test_create_and_get_product(client):
     payload = {
         "name": "Test Sneaker",
@@ -107,37 +100,27 @@ def test_create_and_get_product(client):
     data = response.json()
     assert data["name"] == "Test Sneaker"
     product_id = data["product_id"]
-
     response = client.get(f"/products/{product_id}")
     assert response.status_code == 200
     assert response.json()["product_id"] == product_id
 
 
-@mock_aws
 def test_create_user_and_prevent_duplicate(client):
     payload = {"name": "Fayemi", "email": "fayemi@example.com"}
     r1 = client.post("/users/", json=payload)
     assert r1.status_code == 201
-
     r2 = client.post("/users/", json=payload)
     assert r2.status_code == 409
 
 
-@mock_aws
 def test_create_order(client):
     product = client.post("/products/", json={
-        "name": "Jacket",
-        "description": "Warm",
-        "price": 150.0,
-        "category": "clothing",
-        "stock": 10,
+        "name": "Jacket", "description": "Warm", "price": 150.0,
+        "category": "clothing", "stock": 10,
     }).json()
-
     user = client.post("/users/", json={
-        "name": "Test User",
-        "email": "user@test.com",
+        "name": "Test User", "email": "user@test.com",
     }).json()
-
     response = client.post("/orders/", json={
         "user_id": user["user_id"],
         "items": [{"product_id": product["product_id"], "quantity": 2}],
@@ -148,7 +131,6 @@ def test_create_order(client):
     assert data["total_amount"] == 300.0
 
 
-@mock_aws
 def test_product_not_found(client):
     response = client.get("/products/nonexistent-id")
     assert response.status_code == 404
