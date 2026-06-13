@@ -4,53 +4,62 @@ A production-grade e-commerce backend built with a real-world Cloud and DevOps s
 
 ---
 
+## Table of Contents
+
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Prerequisites](#prerequisites)
+- [Deployment Guide](#deployment-guide)
+- [API Endpoints](#api-endpoints)
+- [CI/CD Pipeline](#cicd-pipeline)
+- [Observability](#observability)
+- [Key Design Decisions](#key-design-decisions)
+- [Author](#author)
+
+---
+
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        GitHub Actions                        │
-│         push to main → build → push ECR → helm deploy        │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-              ┌──────────▼──────────┐
-              │     Amazon ECR       │
-              │  Docker image store  │
-              └──────────┬──────────┘
-                         │ helm upgrade --install
-              ┌──────────▼──────────────────────────┐
-              │           Amazon EKS                  │
-              │       Kubernetes 1.32                 │
-              │   2 nodes · private subnets · HA      │
-              │                                       │
-              │   ┌───────────────────────────────┐  │
-              │   │    FastAPI + Gunicorn           │  │
-              │   │    2–6 pods · HPA              │  │
-              │   │    IRSA — no hardcoded keys    │  │
-              │   └──────────┬────────────────────┘  │
-              └─────────────┼─────────────────────────┘
-                            │
-           ┌────────────────┼──────────────────┐
-           │                │                   │
-  ┌────────▼──────┐ ┌───────▼──────┐ ┌────────▼──────────┐
-  │   DynamoDB    │ │     S3        │ │  Secrets Manager   │
-  │  - products   │ │ product imgs  │ │  jwt_secret        │
-  │  - orders     │ │ presigned URLs│ │  stripe_api_key    │
-  │  - users      │ └───────────────┘ └────────────────────┘
-  └────────┬──────┘
-           │ DynamoDB Stream (INSERT only)
-  ┌────────▼──────────────┐
-  │      AWS Lambda        │
-  │   order_processor      │
-  │  · decrement stock     │
-  │  · confirm order       │
-  └────────┬──────────────┘
-           │
-  ┌────────▼──────────────┐
-  │      CloudWatch        │
-  │  · Container Insights  │
-  │  · Fluent Bit logs     │
-  │  · Lambda alarms       │
-  └───────────────────────┘
+│         push to main → build → push ECR → helm deploy       │
+└────────────────────────────┬────────────────────────────────┘
+                             │ docker push
+                    ┌────────▼────────┐
+                    │   Amazon ECR    │
+                    │  Image registry │
+                    └────────┬────────┘
+                             │ helm upgrade
+              ┌──────────────▼──────────────────┐
+              │          Amazon EKS              │
+              │      Kubernetes 1.32             │
+              │   Private subnets across 3 AZs  │
+              │                                  │
+              │  ┌──────────────────────────┐   │
+              │  │   FastAPI + Gunicorn      │   │
+              │  │   2–6 pods · HPA         │   │
+              │  │   IRSA — no AWS keys     │   │
+              │  └──────┬───────────────────┘   │
+              └─────────┼────────────────────────┘
+                        │
+          ┌─────────────┼──────────────┬──────────────────┐
+          │             │              │                    │
+   ┌──────▼──────┐  ┌───▼──────┐  ┌───▼──────┐  ┌────────▼───────┐
+   │  DynamoDB   │  │    S3    │  │ Secrets  │  │  CloudWatch    │
+   │  products   │  │ product  │  │ Manager  │  │  Logs · Alarms │
+   │  orders ────┤  │ images   │  │ jwt key  │  │  Container     │
+   │  users      │  │ presigned│  │ stripe   │  │  Insights      │
+   └──────┬──────┘  │ URLs     │  └──────────┘  └────────────────┘
+          │         └──────────┘
+          │ DynamoDB Stream (INSERT only)
+   ┌──────▼──────────────┐
+   │     AWS Lambda      │
+   │   order_processor   │
+   │  · decrement stock  │
+   │  · confirm order    │
+   └─────────────────────┘
 ```
 
 ---
@@ -68,10 +77,10 @@ A production-grade e-commerce backend built with a real-world Cloud and DevOps s
 | Object Storage | Amazon S3 | Product image uploads with presigned URLs |
 | Container Registry | Amazon ECR | Stores Docker images with lifecycle policies |
 | Secrets | AWS Secrets Manager | Stores JWT and Stripe secrets securely |
-| Observability | CloudWatch | Container Insights, logs, alarms |
+| Observability | CloudWatch | Container Insights, logs, alarms, dashboards |
 | Infrastructure as Code | Terraform (modular) | Provisions all AWS resources |
 | CI/CD | GitHub Actions | Build, push, deploy pipeline on every push |
-| AWS Authentication | IRSA | Pods assume IAM roles — no hardcoded keys |
+| AWS Authentication | IRSA | Pods assume IAM roles without hardcoded keys |
 | Networking | VPC, private subnets, NAT Gateway | Secure isolated network across 3 AZs |
 
 ---
@@ -126,7 +135,7 @@ ecommerce-backend/
         ├── values.yaml         # Image, resources, HPA, probes, env vars
         └── templates/
             ├── deployment.yaml # Topology spread, lifecycle hooks
-            ├── service.yaml    # ClusterIP service + HPA + ConfigMap
+            ├── service.yaml    # ClusterIP + HPA + ConfigMap + ServiceAccount
             └── _helpers.tpl    # Helm helper functions
 ```
 
@@ -139,6 +148,7 @@ ecommerce-backend/
 - kubectl
 - Helm >= 3.14
 - Docker
+- A GitHub account with Actions enabled
 
 ---
 
@@ -173,7 +183,7 @@ terraform plan
 terraform apply
 ```
 
-Takes approximately 15 minutes. EKS provisioning is the longest step.
+> Takes approximately 15 minutes. EKS provisioning is the longest step.
 
 ### Step 3 — Configure kubectl
 
@@ -182,25 +192,26 @@ aws eks update-kubeconfig \
   --region eu-west-1 \
   --name dev-ecommerce-eks
 
+# Verify nodes are ready
 kubectl get nodes
 ```
 
 ### Step 4 — Add GitHub Actions secrets
 
-Go to your GitHub repo → Settings → Secrets and variables → Actions and add:
+Go to your GitHub repo → **Settings** → **Secrets and variables** → **Actions** and add:
 
-| Secret | Value |
+| Secret | Description |
 |---|---|
-| `AWS_ACCESS_KEY_ID` | Your IAM user access key |
-| `AWS_SECRET_ACCESS_KEY` | Your IAM user secret key |
+| `AWS_ACCESS_KEY_ID` | IAM user access key |
+| `AWS_SECRET_ACCESS_KEY` | IAM user secret key |
 
-### Step 5 — Push to trigger the pipeline
+### Step 5 — Push to trigger CI/CD
 
 ```bash
 git push origin main
 ```
 
-GitHub Actions will build the Docker image, push to ECR and deploy to EKS via Helm automatically.
+GitHub Actions will build the Docker image, push to ECR, and deploy to EKS via Helm automatically.
 
 ### Step 6 — Verify deployment
 
@@ -221,9 +232,9 @@ kubectl get hpa -n ecommerce
 | `GET` | `/products` | List all products |
 | `POST` | `/products` | Create a product |
 | `GET` | `/products/{id}` | Get a product by ID |
-| `GET` | `/products/category/{cat}` | List products by category |
+| `GET` | `/products/category/{category}` | List products by category |
 | `POST` | `/products/{id}/image` | Upload a product image to S3 |
-| `GET` | `/products/{id}/image-url` | Get a presigned URL for the product image |
+| `GET` | `/products/{id}/image-url` | Get a presigned URL for a product image |
 | `POST` | `/users` | Register a new user |
 | `GET` | `/users/{id}` | Get a user by ID |
 | `POST` | `/orders` | Place a new order |
@@ -233,8 +244,9 @@ kubectl get hpa -n ecommerce
 
 ### Example — Place an order
 
+**Request:**
 ```bash
-curl -X POST https://<your-eks-endpoint>/orders \
+curl -X POST https://<your-endpoint>/orders \
   -H "Content-Type: application/json" \
   -d '{
     "user_id": "abc123",
@@ -244,20 +256,27 @@ curl -X POST https://<your-eks-endpoint>/orders \
   }'
 ```
 
-Response:
-
+**Response:**
 ```json
 {
   "order_id": "550e8400-e29b-41d4-a716-446655440000",
   "user_id": "abc123",
-  "items": [...],
+  "items": [
+    {
+      "product_id": "prod-001",
+      "name": "Test Sneaker",
+      "quantity": 2,
+      "unit_price": 99.99,
+      "line_total": 199.98
+    }
+  ],
   "total_amount": 199.98,
   "status": "PENDING",
   "created_at": "2026-06-07T10:00:00Z"
 }
 ```
 
-The API responds immediately. The DynamoDB Stream then triggers Lambda asynchronously to process the order.
+After the order is written to DynamoDB, the Stream triggers Lambda which confirms the order asynchronously.
 
 ---
 
@@ -265,58 +284,66 @@ The API responds immediately. The DynamoDB Stream then triggers Lambda asynchron
 
 ```
 Push to main
-      │
-      ▼
-┌─────────────────┐
-│   Build job      │
-│  · ECR login     │
-│  · docker build  │
-│  · docker push   │
-└────────┬────────┘
-         │ on success
-         ▼
-┌─────────────────┐
-│   Deploy job     │
-│  · kubeconfig   │
-│  · helm upgrade  │
-└─────────────────┘
+     │
+     ▼
+┌─────────────────────┐
+│     Build job        │
+│  1. ECR login        │
+│  2. docker build     │
+│  3. docker push ECR  │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│     Deploy job       │
+│  1. kubeconfig       │
+│  2. helm upgrade     │
+│     --install        │
+└─────────────────────┘
 ```
 
-Every push to `main` triggers a full build and deploy. The Docker image is tagged with the short Git SHA for full traceability.
+Every push to `main` triggers a full build and deploy. The Docker image is tagged with the short Git SHA for full traceability across ECR and Kubernetes.
+
+---
+
+## Observability
+
+| Component | What it monitors |
+|---|---|
+| CloudWatch Container Insights | CPU, memory, network for all EKS pods |
+| Fluent Bit | Ships pod logs to CloudWatch Logs automatically |
+| Structured JSON logging | All app and Lambda logs are JSON-formatted for querying |
+| Lambda error alarm | Fires when Lambda errors exceed 5 in 60 seconds |
+| Lambda duration alarm | Fires when p95 duration exceeds 25 seconds |
+| Log retention | All log groups set to 7-day retention in dev |
 
 ---
 
 ## Key Design Decisions
 
 ### IRSA — No hardcoded AWS credentials
-EKS pods assume an IAM role via OIDC federation. No AWS keys are stored in the application, Kubernetes secrets or environment variables. The role is annotated on the Kubernetes ServiceAccount and scoped to only the DynamoDB tables, S3 bucket and Secrets Manager entries the app needs.
+
+EKS pods assume an IAM role via OIDC federation. No AWS keys are stored in the application, environment variables or Kubernetes secrets. The IAM role is annotated on the Kubernetes ServiceAccount and scoped to only the DynamoDB tables, S3 bucket and Secrets Manager entries it needs.
 
 ### DynamoDB Streams + Lambda
-Order processing is fully asynchronous. The API writes the order and responds immediately. A DynamoDB Stream triggers Lambda which decrements stock using a conditional update — preventing overselling — and confirms the order. This decouples the API from processing logic and keeps response times fast.
+
+Order processing is fully asynchronous. The API writes the order to DynamoDB and responds immediately with `PENDING` status. A DynamoDB Stream fires on INSERT and triggers the Lambda function, which atomically decrements stock using a conditional update — preventing overselling — and updates the order status to `CONFIRMED`. This decouples the API from processing logic and keeps response times fast.
 
 ### Multi-stage Dockerfile
-The builder stage installs dependencies. The runtime stage copies only the installed packages. The final image has no build tools, reducing size and attack surface. The container runs as a non-root user.
+
+The builder stage installs all dependencies. The runtime stage copies only the installed packages into a clean image. No build tools reach production. The final image runs as a non-root user for security.
 
 ### Terraform modules + remote state
-Each concern (networking, EKS, Lambda, storage) is an isolated reusable module. State is stored in S3 with DynamoDB locking, preventing concurrent applies from corrupting state.
+
+Each concern — networking, EKS, Lambda, storage, observability — is an isolated reusable module. State is stored in S3 with DynamoDB locking, preventing concurrent applies from corrupting state. The `dev` and `prod` environments are separate folders calling the same modules with different variable values.
 
 ### Helm over raw manifests
-Helm provides templating, environment-specific values and rollback capability. The chart includes HPA, topology spread constraints across AZs, liveness and readiness probes and graceful shutdown hooks.
+
+Helm provides templating, environment-specific values files, and rollback on failure. The chart includes HPA, topology spread constraints across availability zones, liveness and readiness probes, resource requests and limits, and graceful shutdown hooks via `preStop`.
 
 ### Horizontal Pod Autoscaler
-The API scales between 2 and 6 pods based on CPU utilisation. Pods are spread across availability zones using topology spread constraints so a single AZ failure does not take down the service.
 
----
-
-## Observability
-
-| Tool | Purpose |
-|---|---|
-| CloudWatch Container Insights | CPU, memory and network metrics for all EKS pods |
-| Fluent Bit | Ships pod logs to CloudWatch Logs automatically |
-| Structured JSON logging | All app and Lambda logs are JSON-formatted for easy querying |
-| CloudWatch Alarms | Alerts on Lambda error rate and p95 duration |
-| Log retention | 7-day retention in dev to control costs |
+The FastAPI application scales between 2 and 6 pods based on CPU utilisation. Topology spread constraints ensure pods are distributed across all 3 availability zones so a single AZ failure does not take down the service.
 
 ---
 
@@ -324,4 +351,7 @@ The API scales between 2 and 6 pods based on CPU utilisation. Pods are spread ac
 
 **Abraham Fayemi** — Cloud & DevOps Engineer
 Bologna, Italy
-[linkedin.com/in/abraham-fayemi-0032382a0](https://linkedin.com/in/abraham-fayemi-0032382a0) · [github.com/seed111](https://github.com/seed111)
+
+- GitHub: [github.com/seed111](https://github.com/seed111)
+- LinkedIn: [linkedin.com/in/abraham-fayemi-0032382a0](https://linkedin.com/in/abraham-fayemi-0032382a0)
+- Email: abrahamsheye1@gmail.com
